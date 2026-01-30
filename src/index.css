@@ -1,13 +1,186 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* src/index.css */
+
+:root {
+  --bg-body: #050505;       /* Almost Pure Black */
+  --bg-card: #141414;       /* Dark Grey for cards */
+  --text-main: #ffffff;     /* White text */
+  --text-muted: #a1a1aa;    /* Grey text for secondary info */
+  
+  --primary: #3b82f6;       /* Electric Blue (Buttons) */
+  --accent: #10b981;        /* Neon Green (Prices/Status) */
+  --danger: #ef4444;        /* Red (Delete/Reject) */
+  
+  --border: #27272a;        /* Subtle dark borders */
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+body {
+  margin: 0;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background-color: var(--bg-body);
+  color: var(--text-main);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- LAYOUT --- */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.fade-in { animation: fadeIn 0.4s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* --- NAVBAR --- */
+.navbar {
+  background: rgba(5, 5, 5, 0.8); /* Semi-transparent black */
+  backdrop-filter: blur(10px);    /* Glass effect */
+  border-bottom: 1px solid var(--border);
+  padding: 15px 30px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo {
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--text-main);
+}
+
+/* --- BUTTONS --- */
+.btn {
+  border: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: white;
+  box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); /* Blue Glow */
+}
+.btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6); }
+
+.btn-secondary {
+  background-color: #27272a;
+  color: var(--text-main);
+}
+.btn-secondary:hover { background-color: #3f3f46; }
+
+.btn-danger {
+  background-color: rgba(239, 68, 68, 0.1);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+/* --- FORMS & INPUTS --- */
+input {
+  width: 100%;
+  padding: 14px;
+  margin-bottom: 15px;
+  background: #18181b;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: white;
+  font-size: 16px;
+  box-sizing: border-box;
+}
+input:focus {
+  outline: none;
+  border-color: var(--primary);
+  background: #27272a;
+}
+
+/* --- HERO SECTION --- */
+.hero {
+  text-align: left;
+  padding: 60px 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 40px;
+}
+.hero h1 { font-size: 56px; margin: 0; letter-spacing: -2px; background: linear-gradient(to right, #fff, #a1a1aa); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+.hero p { color: var(--text-muted); font-size: 20px; margin-top: 10px; }
+
+/* --- GRID & CARDS --- */
+.main-grid {
+  display: grid;
+  grid-template-columns: 1fr 350px;
+  gap: 40px;
+  align-items: start;
+}
+
+.menu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 70px;
+}
+
+.food-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 25px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  text-align: center;
+  height: 100%;
+  min-height: 180px;
+  transition: all 0.2s;
+}
+.food-card:hover { 
+  transform: translateY(-5px); 
+  border-color: var(--primary); 
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.food-card h3 {
+  font-size: 20px;
+  margin: 0 0 15px 0;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.4;
+}
+
+.price-tag {
+  display: inline-block;
+  color: var(--accent); /* Neon Green */
+  font-weight: 800;
+  font-size: 20px;
+  margin-bottom: 15px;
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.3); /* Subtle glow */
+}
+
+/* --- CART PANEL --- */
+.cart-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  padding: 30px;
+  border-radius: 12px;
+  position: sticky;
+  top: 100px;
+}
+
+/* --- STATUS BADGES --- */
+.status-badge { padding: 4px 10px; border-radius: 4px; font-size: 11px; text-transform: uppercase; font-weight: bold; letter-spacing: 1px; }
+.status-pending { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.status-ready { background: rgba(16, 185, 129, 0.1); color: var(--accent); border: 1px solid var(--accent); }
+.status-rejected { background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid var(--danger); }
+
+/* --- MOBILE --- */
+@media (max-width: 768px) {
+  .main-grid { grid-template-columns: 1fr; }
+  .cart-panel { display: none; }
+  .navbar { padding: 15px; }
+  .hero h1 { font-size: 36px; }
 }
