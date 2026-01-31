@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase'; 
-import { collection, addDoc, onSnapshot, doc, updateDoc, query, where, setDoc, getDoc, arrayUnion } from 'firebase/firestore'; 
+import { collection, addDoc, onSnapshot, doc, updateDoc, query, where, setDoc, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-// Removed Radar Chart imports, kept standard Charts
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Legend, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Legend, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
 import './index.css';
 
 function App() {
@@ -13,18 +12,21 @@ function App() {
   const [userMode, setUserMode] = useState("student"); 
   
   const [canteens, setCanteens] = useState([]); 
-  const [selectedCanteen, setSelectedCanteen] = useState(null); 
+  const [selectedCanteenId, setSelectedCanteenId] = useState(null); 
   
   const [cart, setCart] = useState([]); 
   const [orders, setOrders] = useState([]); 
   const [currentView, setCurrentView] = useState("home"); 
 
+  // Auth
   const [isRegistering, setIsRegistering] = useState(false); 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [collegeId, setCollegeId] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
+
+  const [toast, setToast] = useState({ show: false, message: "", type: "" });
 
   // Shopkeeper
   const [showAddForm, setShowAddForm] = useState(false);
@@ -38,9 +40,20 @@ function App() {
   const [specialRequest, setSpecialRequest] = useState(""); 
   const [topSellingItems, setTopSellingItems] = useState([]);
   const [waitTime, setWaitTime] = useState(0); 
+  
+  // NEW: Mobile Cart State
+  const [showMobileCart, setShowMobileCart] = useState(false);
+
+  const prevOrdersRef = useRef({}); 
 
   const DEFAULT_IMG = "https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=500&q=60";
   const CANTEEN_IMG = "https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1600&q=80"; 
+
+  // --- HELPER: SHOW TOAST ---
+  const showToast = (message, type = "error") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => { setToast({ show: false, message: "", type: "" }); }, 7000); 
+  };
 
   // --- 1. AUTH & WALLET LISTENER ---
   useEffect(() => {
@@ -51,7 +64,7 @@ function App() {
           setUserMode("shopkeeper");
         } else {
           setUserMode("student");
-          setSelectedCanteen(null);
+          setSelectedCanteenId(null);
           setCurrentView("home");
           onSnapshot(doc(db, "users", u.uid), async (snapshot) => {
              if(snapshot.exists()) {
@@ -78,7 +91,7 @@ function App() {
     return () => unsub();
   }, []);
 
-  // --- 3. ORDERS LISTENER ---
+  // --- 3. ORDERS LISTENER (WITH SMART NOTIFICATIONS) ---
   useEffect(() => {
     const q = collection(db, "orders"); 
     const unsub = onSnapshot(q, (snapshot) => {
@@ -90,10 +103,30 @@ function App() {
       } else if (user && user.email) {
           myOrders = allOrders.filter(o => o.studentId === user.email);
       }
+      
       myOrders.sort((a,b) => (b.timestamp?.seconds || 0) - (a.timestamp?.seconds || 0));
       setOrders(myOrders);
 
-      // Trending Logic
+      // --- REAL-TIME NOTIFICATION LOGIC ---
+      if (userMode === "student") {
+          myOrders.forEach(order => {
+              const oldStatus = prevOrdersRef.current[order.id];
+              const newStatus = order.status;
+
+              if (oldStatus && oldStatus !== newStatus) {
+                  if (newStatus === "preparing") {
+                      showToast(`👨‍🍳 Kitchen Accepted Order #${order.tokenId}`, "success");
+                  } else if (newStatus === "ready") {
+                      showToast(`✅ Order #${order.tokenId} is READY! Pick it up.`, "success");
+                  } else if (newStatus === "rejected") {
+                      showToast(`❌ Order #${order.tokenId} was Rejected.`, "error");
+                  }
+              }
+              prevOrdersRef.current[order.id] = newStatus;
+          });
+      }
+
+      // Stats Logic
       const itemCounts = {};
       allOrders.forEach(o => {
           o.items.forEach(i => { itemCounts[i.name] = (itemCounts[i.name] || 0) + 1; });
@@ -101,7 +134,6 @@ function App() {
       const top3 = Object.entries(itemCounts).sort((a,b) => b[1] - a[1]).slice(0, 3).map(e => e[0]);
       setTopSellingItems(top3);
 
-      // Wait Time Logic
       const activeCount = allOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length;
       setWaitTime(activeCount * 5); 
     });
@@ -109,29 +141,35 @@ function App() {
   }, [user, userMode]);
 
   // --- ACTIONS ---
-  const handleLogin = (e) => { 
+  const handleLogin = async (e) => { 
     e.preventDefault(); 
-    signInWithEmailAndPassword(auth, email, password).catch(err => alert(err.message)); 
+    try { await signInWithEmailAndPassword(auth, email, password); } catch (err) { showToast("Invalid Email or Password.", "error"); } 
   };
   
   const handleSignup = async (e) => {
     e.preventDefault();
-    if (password !== confirmPass) return alert("Passwords do not match!");
+    if (password !== confirmPass) return showToast("Passwords do not match!", "error");
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       await setDoc(doc(db, "users", cred.user.uid), { fullName, collegeId, email, role: "student", walletBalance: 5000 });
-      alert("Account Created! You got ₹5000 Signup Bonus!");
-    } catch (err) { alert(err.message); }
+      showToast("Account Created! ₹5000 Bonus Added.", "success");
+    } catch (err) { showToast(err.message, "error"); }
   };
 
   const placeOrder = async () => {
-    if (cart.length === 0) return alert("Cart empty!");
-    if (!userData || userData.walletBalance === undefined) return alert("Loading data...");
+    // Check Shop Status
+    const liveCanteen = canteens.find(c => c.id === selectedCanteenId);
+    if (selectedCanteenId && (!liveCanteen || liveCanteen.isOpen === false)) {
+        return showToast("⚠️ Shop just closed! Cannot place order.", "error");
+    }
+
+    if (cart.length === 0) return showToast("Cart is empty!", "error");
+    if (!userData || userData.walletBalance === undefined) return showToast("Loading data...", "error");
 
     const totalAmount = cart.reduce((a, b) => a + b.price, 0);
 
     if (userData.walletBalance < totalAmount) {
-      return alert(`Insufficient Funds! Total: ₹${totalAmount}, Balance: ₹${userData.walletBalance}`);
+      return showToast(`Insufficient Funds! You have ₹${userData.walletBalance}`, "error");
     }
 
     const tokenId = Math.floor(1000 + Math.random() * 9000); 
@@ -145,36 +183,49 @@ function App() {
         status: "pending", 
         studentId: user.email, 
         studentName: studentLabel, 
-        canteenName: selectedCanteen?.name || "Main Canteen",
+        canteenName: liveCanteen?.name || "Canteen",
         note: specialRequest,
         tokenId: tokenId, 
         timestamp: new Date()
       });
-      alert(`Order Placed! Token #${tokenId}`); 
+      showToast(`Order Placed! Token #${tokenId}`, "success");
       setCart([]); 
       setSpecialRequest("");
+      setShowMobileCart(false); 
       setCurrentView("account"); 
-      setSelectedCanteen(null);
-    } catch (err) { console.error(err); alert("Transaction Failed: " + err.message); }
+      setSelectedCanteenId(null);
+    } catch (err) { console.error(err); showToast("Transaction Failed.", "error"); }
   };
 
   const addNewItem = async (e) => {
     e.preventDefault();
-    if (!newItemName.trim() || !newItemPrice) return alert("Error: Item Name and Price are mandatory!");
+    if (!newItemName.trim() || !newItemPrice) return showToast("Name and Price are required!", "error");
     try {
       const canteenRef = doc(db, "canteens", canteens[0].id);
       await updateDoc(canteenRef, {
         menu: arrayUnion({ name: newItemName, price: Number(newItemPrice), image: newItemImage || DEFAULT_IMG, available: true })
       });
-      alert("Item Added!");
+      showToast("Item Added Successfully!", "success");
       setNewItemName(""); setNewItemPrice(""); setShowAddForm(false);
-    } catch (error) { alert(error.message); }
+    } catch (error) { showToast(error.message, "error"); }
+  };
+
+  // --- NEW: DELETE ITEM FUNCTION ---
+  const deleteItem = async (itemToDelete) => {
+    if(!window.confirm(`Are you sure you want to delete ${itemToDelete.name}?`)) return;
+    try {
+      const canteenRef = doc(db, "canteens", canteens[0].id);
+      await updateDoc(canteenRef, {
+        menu: arrayRemove(itemToDelete)
+      });
+      showToast("Item Deleted.", "success");
+    } catch (error) { showToast(error.message, "error"); }
   };
 
   const toggleShopStatus = async () => {
     if (canteens.length === 0) return;
     const canteen = canteens[0];
-    try { await updateDoc(doc(db, "canteens", canteen.id), { isOpen: !(canteen.isOpen !== false) }); } catch (err) { alert(err.message); }
+    try { await updateDoc(doc(db, "canteens", canteen.id), { isOpen: !(canteen.isOpen !== false) }); } catch (err) { showToast(err.message, "error"); }
   };
 
   const toggleItemAvailability = async (itemToToggle) => {
@@ -192,10 +243,14 @@ function App() {
       await updateDoc(doc(db, "orders", id), data);
   };
   
-  const handleLogout = () => { signOut(auth); setCart([]); setSelectedCanteen(null); };
-  const goHome = () => { setCurrentView("home"); setSelectedCanteen(null); };
+  const handleLogout = () => { signOut(auth); setCart([]); setSelectedCanteenId(null); };
+  const goHome = () => { setCurrentView("home"); setSelectedCanteenId(null); };
 
-  // --- ANALYTICS ENGINE ---
+  // --- GET ACTIVE ORDER (For Persistent Banner) ---
+  const activeOrder = orders.find(o => o.status === 'pending' || o.status === 'preparing');
+  const liveSelectedCanteen = canteens.find(c => c.id === selectedCanteenId);
+
+  // --- ANALYTICS ENGINE (Standard) ---
   const processStats = () => {
     const dailyData = {}; const itemCounts = {}; const canteenSpending = {}; const dailyItemBreakdown = {}; const hourlyTraffic = {}; const customerSpending = {};
     const categoryData = { "Fast Food": 0, "Meals": 0, "Drinks": 0, "Snacks": 0 };
@@ -223,10 +278,7 @@ function App() {
     });
 
     const chartData = Object.keys(dailyData).map(date => ({ name: date, amount: dailyData[date] })).slice(-7);
-    
-    // UPDATED: Simple Bar Data for Cravings
     const cravingsBarData = Object.keys(categoryData).map(key => ({ name: key, count: categoryData[key] }));
-
     const mealData = Object.keys(mealTimeData).map(key => ({ name: key, orders: mealTimeData[key] }));
     const loyaltyData = Object.keys(customerSpending).map(key => ({ name: key, total: customerSpending[key] })).sort((a,b) => b.total - a.total).slice(0, 3);
     const canteenData = Object.keys(canteenSpending).map(name => ({ name: name, value: canteenSpending[name] }));
@@ -239,7 +291,6 @@ function App() {
     return { totalSpent, chartData, topItems, canteenData, stackData, topItemNames, avgOrderValue, peakHourData, cravingsBarData, mealData, loyaltyData, avgWaitTime, rejectedCount };
   };
 
-  // --- VIEWS ---
   const StatsView = () => {
     const { totalSpent, chartData, topItems, canteenData, stackData, topItemNames, avgOrderValue, peakHourData, cravingsBarData, mealData, loyaltyData, avgWaitTime, rejectedCount } = processStats();
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF5733'];
@@ -253,33 +304,8 @@ function App() {
           {userMode === "shopkeeper" && <><div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>AVG PREP TIME</h4><h1 style={{margin: "10px 0", color: "#f59e0b", fontSize: "32px"}}>{avgWaitTime} <span style={{fontSize: "16px"}}>min</span></h1></div><div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>REJECTIONS</h4><h1 style={{margin: "10px 0", color: "#ef4444", fontSize: "32px"}}>{rejectedCount}</h1></div></>}
         </div>
         <div className="main-grid" style={{gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px"}}>
-          <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}>
-             <h3 style={{color: "white", marginTop: 0}}>Daily Financial Trend</h3>
-             <ResponsiveContainer width="100%" height={300}><AreaChart data={chartData}><defs><linearGradient id="colorSplit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><CartesianGrid strokeDasharray="3 3" stroke="#333" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}} /><Area type="monotone" dataKey="amount" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSplit)" /></AreaChart></ResponsiveContainer>
-          </div>
-          
-          {/* STUDENT SECTION */}
-          {userMode === "student" && (
-            <>
-             {/* SIMPLIFIED CRAVINGS GRAPH (Bar Chart instead of Radar) */}
-             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}>
-               <h3 style={{color: "white", marginTop: 0}}>What You Eat Most</h3>
-               <ResponsiveContainer width="100%" height={300}>
-                 <BarChart data={cravingsBarData} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#333" />
-                    <XAxis type="number" stroke="#666" />
-                    <YAxis dataKey="name" type="category" width={80} stroke="#fff" />
-                    <Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} />
-                    <Bar dataKey="count" fill="#10b981" barSize={30} radius={[0, 10, 10, 0]} />
-                 </BarChart>
-               </ResponsiveContainer>
-             </div>
-
-             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Spending by Canteen</h3><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={canteenData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={{ fill: 'white', fontSize: 12 }}>{canteenData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend /></PieChart></ResponsiveContainer></div>
-            </>
-          )}
-
-          {/* SHOPKEEPER SECTION */}
+          <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Daily Financial Trend</h3><ResponsiveContainer width="100%" height={300}><AreaChart data={chartData}><defs><linearGradient id="colorSplit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><CartesianGrid strokeDasharray="3 3" stroke="#333" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}} /><Area type="monotone" dataKey="amount" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSplit)" /></AreaChart></ResponsiveContainer></div>
+          {userMode === "student" && <><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>What You Eat Most</h3><ResponsiveContainer width="100%" height={300}><BarChart data={cravingsBarData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis type="number" stroke="#666" /><YAxis dataKey="name" type="category" width={80} stroke="#fff" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="count" fill="#10b981" barSize={30} radius={[0, 10, 10, 0]} /></BarChart></ResponsiveContainer></div><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Spending by Canteen</h3><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={canteenData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={{ fill: 'white', fontSize: 12 }}>{canteenData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend /></PieChart></ResponsiveContainer></div></>}
           {userMode === "shopkeeper" && <><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Peak Traffic Hours</h3><ResponsiveContainer width="100%" height={300}><BarChart data={peakHourData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="value" fill="#FF8042" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Item Sales Breakdown</h3><ResponsiveContainer width="100%" height={300}><BarChart data={stackData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend />{topItemNames.map((itemName, index) => (<Bar key={index} dataKey={itemName} stackId="a" fill={COLORS[index % COLORS.length]} />))}</BarChart></ResponsiveContainer></div></>}
         </div>
       </div>
@@ -321,12 +347,15 @@ function App() {
           </form>
           <button onClick={()=>setIsRegistering(!isRegistering)} className="btn btn-secondary" style={{width: "100%", marginTop: "10px"}}>{isRegistering ? "Back to Login" : "No account? Register"}</button>
         </div>
+        {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "⚠️" : "✅"} {toast.message}</div></div>}
       </div>
     );
   }
 
   return (
     <div style={{minHeight: "100vh", paddingBottom: "100px"}}> 
+      {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "⚠️" : "✅"} {toast.message}</div></div>}
+      
       <div className="navbar">
         <div className="logo" onClick={goHome} style={{cursor:"pointer"}}>CAMTEEN.</div>
         <div style={{display: "flex", alignItems: "center", gap: "15px"}}>
@@ -339,20 +368,32 @@ function App() {
           </div>
         </div>
       </div>
+
+      {/* --- PERSISTENT ACTIVE ORDER BANNER (Sticky Top) --- */}
+      {userMode === "student" && activeOrder && (
+        <div className="active-order-banner" onClick={()=>setCurrentView("account")} style={{cursor:"pointer"}}>
+           <span>🔥 Order #{activeOrder.tokenId} is <strong>{activeOrder.status.toUpperCase()}</strong></span>
+           <span style={{background: "white", color: "#064e3b", padding: "4px 10px", borderRadius: "20px", fontSize: "12px"}}>Track →</span>
+        </div>
+      )}
+
       {currentView === "stats" && <StatsView />}
       {currentView === "account" && <AccountView />}
+      
       {currentView === "home" && (
         <div className="container fade-in">
           {userMode === "student" && (
             <>
-              {!selectedCanteen ? (
+              {!liveSelectedCanteen ? (
                 <>
                   <div className="hero"><h1>Select Canteen</h1><p>Where are you eating today?</p></div>
                   <div className="menu-grid">
                     {canteens.map(c => {
                       const isShopOpen = c.isOpen !== false;
                       return (
-                        <div key={c.id} className="food-card" onClick={() => isShopOpen ? setSelectedCanteen(c) : alert("Shop is Closed!")} style={{cursor: isShopOpen ? "pointer" : "not-allowed", alignItems: "flex-start", textAlign: "left", backgroundImage: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${CANTEEN_IMG})`, backgroundSize: "cover", border: "1px solid #333", opacity: isShopOpen ? 1 : 0.6 }}>
+                        <div key={c.id} className="food-card" 
+                             onClick={() => isShopOpen ? setSelectedCanteenId(c.id) : showToast("⛔ Shop is currently closed.", "error")} 
+                             style={{cursor: isShopOpen ? "pointer" : "not-allowed", alignItems: "flex-start", textAlign: "left", backgroundImage: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${CANTEEN_IMG})`, backgroundSize: "cover", border: "1px solid #333", opacity: isShopOpen ? 1 : 0.6 }}>
                           <div style={{marginTop: "auto"}}>
                             <span style={{background: isShopOpen ? "#10b981" : "#ef4444", color: "white", padding: "5px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", marginBottom: "10px", display: "inline-block"}}>{isShopOpen ? "● OPEN" : "● CLOSED"}</span>
                             <h2 style={{margin: "5px 0", color: "white", fontSize: "24px"}}>{c.name}</h2>
@@ -366,16 +407,19 @@ function App() {
               ) : (
                 <>
                   <div style={{position: "relative", width: "100%", height: "300px", backgroundImage: `linear-gradient(to bottom, rgba(0,0,0,0.3), rgba(0,0,0,0.9)), url(${CANTEEN_IMG})`, backgroundSize: "cover", backgroundPosition: "center", borderRadius: "16px", marginBottom: "40px", display: "flex", flexDirection: "column", justifyContent: "flex-end", padding: "40px"}}>
-                    <button onClick={() => setSelectedCanteen(null)} style={{position: "absolute", top: "20px", left: "20px", background: "rgba(0,0,0,0.5)", color: "white", border: "1px solid rgba(255,255,255,0.2)", padding: "8px 16px", borderRadius: "30px", cursor: "pointer", backdropFilter: "blur(5px)"}}>← Back</button>
-                    <h1 style={{fontSize: "48px", margin: 0, color: "white"}}>{selectedCanteen.name}</h1>
+                    <button onClick={() => setSelectedCanteenId(null)} style={{position: "absolute", top: "20px", left: "20px", background: "rgba(0,0,0,0.5)", color: "white", border: "1px solid rgba(255,255,255,0.2)", padding: "8px 16px", borderRadius: "30px", cursor: "pointer", backdropFilter: "blur(5px)"}}>← Back</button>
+                    <h1 style={{fontSize: "48px", margin: 0, color: "white"}}>{liveSelectedCanteen.name}</h1>
                     <p style={{color: "#ccc", fontSize: "18px", marginTop: "5px"}}>Full Menu & Beverages</p>
                     <div style={{marginTop: "20px", background: "rgba(0,0,0,0.6)", padding: "10px 20px", borderRadius: "30px", border: "1px solid #f59e0b", color: "#f59e0b", fontWeight: "bold", display: "inline-block", backdropFilter: "blur(5px)"}}>⏳ Current Wait Time: ~{waitTime} mins</div>
                   </div>
+                  
+                  {liveSelectedCanteen.isOpen === false && <div style={{background: "#ef4444", color: "white", padding: "20px", borderRadius: "8px", textAlign: "center", marginBottom: "30px", fontSize: "20px", fontWeight: "bold"}}>⛔ Shop has just closed. Ordering is paused.</div>}
+
                   <div className="main-grid">
-                    <div>
+                    <div style={{opacity: liveSelectedCanteen.isOpen === false ? 0.5 : 1, pointerEvents: liveSelectedCanteen.isOpen === false ? "none" : "auto"}}>
                       <input type="text" placeholder="Search for food..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ marginBottom: "30px", background: "transparent", border: "none", borderBottom: "1px solid #333", borderRadius: 0, paddingLeft: 0, fontSize: "20px" }} />
                       <div className="menu-grid">
-                        {selectedCanteen.menu && selectedCanteen.menu.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => { const aTrend = topSellingItems.includes(a.name); const bTrend = topSellingItems.includes(b.name); if (aTrend && !bTrend) return -1; if (!aTrend && bTrend) return 1; return 0; }).map((item, idx) => {
+                        {liveSelectedCanteen.menu && liveSelectedCanteen.menu.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => { const aTrend = topSellingItems.includes(a.name); const bTrend = topSellingItems.includes(b.name); if (aTrend && !bTrend) return -1; if (!aTrend && bTrend) return 1; return 0; }).map((item, idx) => {
                             const isAvailable = item.available !== false;
                             const isTrending = topSellingItems.includes(item.name);
                             return (
@@ -388,6 +432,7 @@ function App() {
                           })}
                       </div>
                     </div>
+                    {/* DESKTOP CART */}
                     <div className="cart-panel">
                       <h3 style={{marginTop: 0, color: "white"}}>Your Order</h3>
                       {cart.length === 0 ? <p style={{color: "#555"}}>Cart is empty</p> : (
@@ -396,7 +441,7 @@ function App() {
                           <div style={{borderTop: "1px solid #333", paddingTop: "15px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px"}}><strong style={{color: "white"}}>Total</strong><strong style={{fontSize: "24px", color: "var(--accent)"}}>₹{cart.reduce((a,b)=>a+b.price,0)}</strong></div>
                           <div style={{fontSize: "12px", color: "#666", marginBottom: "10px", textAlign: "right"}}>Wallet: ₹{userData?.walletBalance}</div>
                           <textarea placeholder="Any special requests? (e.g. No onion, Extra spicy)" value={specialRequest} onChange={(e) => setSpecialRequest(e.target.value)} style={{width: "100%", padding: "10px", borderRadius: "6px", background: "#111", border: "1px solid #333", color: "white", marginBottom: "15px", fontFamily: "inherit"}} rows={3} />
-                          <button onClick={placeOrder} className="btn btn-primary" style={{width: "100%"}}>Confirm Order</button>
+                          <button onClick={placeOrder} className="btn btn-primary" style={{width: "100%", background: liveSelectedCanteen.isOpen === false ? "#555" : "var(--primary)"}} disabled={liveSelectedCanteen.isOpen === false}>Confirm Order</button>
                         </>
                       )}
                     </div>
@@ -406,11 +451,49 @@ function App() {
             </>
           )}
 
+          {/* --- NEW: MOBILE CART MODAL (Popup List) --- */}
+          {userMode === "student" && showMobileCart && (
+            <div className="mobile-cart-overlay" onClick={() => setShowMobileCart(false)}>
+               <div className="mobile-cart-content" onClick={e => e.stopPropagation()}>
+                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px"}}>
+                     <h2 style={{margin: 0, color: "white"}}>Your Cart</h2>
+                     <button onClick={() => setShowMobileCart(false)} style={{background: "none", border: "none", color: "#888", fontSize: "24px"}}>×</button>
+                  </div>
+                  {cart.length === 0 ? <p style={{color: "#555"}}>Empty</p> : (
+                    <>
+                      <ul style={{paddingLeft: "20px", color: "#ccc", marginBottom: "30px"}}>
+                        {cart.map((i, idx) => (
+                          <li key={idx} style={{marginBottom: "10px", display: "flex", justifyContent: "space-between"}}>
+                             <span>{i.name}</span>
+                             <span>₹{i.price}</span>
+                          </li>
+                        ))}
+                      </ul>
+                      <div style={{display: "flex", justifyContent: "space-between", color: "white", fontSize: "20px", fontWeight: "bold", marginBottom: "20px"}}>
+                         <span>Total</span>
+                         <span style={{color: "var(--accent)"}}>₹{cart.reduce((a,b)=>a+b.price,0)}</span>
+                      </div>
+                      <textarea placeholder="Special instructions..." value={specialRequest} onChange={(e) => setSpecialRequest(e.target.value)} style={{width: "100%", padding: "12px", background: "#333", border: "none", color: "white", borderRadius: "8px", marginBottom: "20px"}} rows={2} />
+                      <button onClick={placeOrder} className="btn btn-primary" style={{width: "100%", padding: "15px", fontSize: "18px"}}>Pay Now</button>
+                    </>
+                  )}
+               </div>
+            </div>
+          )}
+
+          {/* --- NEW: MOBILE CART BAR (Trigger) --- */}
+          {userMode === "student" && cart.length > 0 && selectedCanteenId && !showMobileCart && (
+            <div onClick={() => setShowMobileCart(true)} style={{position: "fixed", bottom: "30px", left: "50%", transform: "translateX(-50%)", width: "90%", maxWidth: "400px", background: "var(--primary)", color: "white", borderRadius: "50px", padding: "15px 30px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 10px 40px rgba(59, 130, 246, 0.5)", zIndex: 1000, cursor: "pointer"}}>
+              <span style={{fontWeight: "600"}}>{cart.length} Items • ₹{cart.reduce((a, b) => a + b.price, 0)}</span>
+              <span style={{fontWeight: "bold", background: "white", color: "var(--primary)", padding: "5px 15px", borderRadius: "20px"}}>View Cart</span>
+            </div>
+          )}
+
           {userMode === "shopkeeper" && (
             <>
               <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "40px", borderBottom: "1px solid #333", paddingBottom: "20px"}}>
                 <h1 style={{margin:0, color: "white"}}>Live Orders</h1>
-                <div style={{display: "flex", gap: "30px"}}>
+                <div style={{display: "flex", gap: "10px"}}>
                    <button onClick={toggleShopStatus} className={`btn ${canteens[0]?.isOpen !== false ? "btn-danger" : "btn-primary"}`} style={{minWidth: "120px"}}>{canteens[0]?.isOpen !== false ? "🔴 Close Shop" : "🟢 Open Shop"}</button>
                    <button onClick={() => setShowAddForm(!showAddForm)} className="btn btn-primary">{showAddForm ? "Close" : "Manage Menu"}</button>
                 </div>
@@ -419,7 +502,6 @@ function App() {
               {showAddForm && (
                 <div style={{background: "var(--bg-card)", padding: "30px", border: "1px solid var(--border)", marginBottom: "40px", borderRadius: "12px"}}>
                   <h3 style={{color: "white", borderBottom: "1px solid #333", paddingBottom: "15px"}}>Manage Menu & Stock</h3>
-                  
                   <div style={{marginBottom: "30px"}}>
                      <h4 style={{color: "#888", marginBottom: "10px"}}>Quick Stock Toggle (Click to Mark Sold Out)</h4>
                      <input type="text" placeholder="Search item to toggle..." value={menuSearchTerm} onChange={(e) => setMenuSearchTerm(e.target.value)} style={{marginBottom: "15px", padding: "10px", width: "100%", background: "#111", border: "1px solid #333", color: "white", borderRadius: "6px"}}/>
@@ -427,14 +509,16 @@ function App() {
                         {canteens[0]?.menu?.filter(i => i.name.toLowerCase().includes(menuSearchTerm.toLowerCase())).map((item, idx) => {
                             const isAvailable = item.available !== false;
                             return (
-                                <button key={idx} onClick={() => toggleItemAvailability(item)} style={{padding: "8px 12px", borderRadius: "20px", border: isAvailable ? "1px solid #10b981" : "1px solid #555", background: isAvailable ? "rgba(16, 185, 129, 0.1)" : "rgba(255,255,255,0.05)", color: isAvailable ? "#10b981" : "#888", cursor: "pointer", fontSize: "13px"}}>
-                                    {isAvailable ? "🟢" : "⚫"} {item.name}
-                                </button>
+                                <div key={idx} style={{display: "flex", alignItems: "center", background: isAvailable ? "rgba(16, 185, 129, 0.1)" : "rgba(255,255,255,0.05)", borderRadius: "20px", paddingRight: "10px", border: isAvailable ? "1px solid #10b981" : "1px solid #555"}}>
+                                    <span onClick={() => toggleItemAvailability(item)} style={{padding: "8px 12px", color: isAvailable ? "#10b981" : "#888", cursor: "pointer", fontSize: "13px"}}>
+                                        {isAvailable ? "🟢" : "⚫"} {item.name}
+                                    </span>
+                                    <span onClick={() => deleteItem(item)} style={{cursor: "pointer", marginLeft: "5px", fontSize: "12px"}}>🗑️</span>
+                                </div>
                             );
                         })}
                      </div>
                   </div>
-
                   <h4 style={{color: "#888", marginTop: "20px"}}>Add New Item to Menu</h4>
                   <form onSubmit={addNewItem} style={{display: "grid", gridTemplateColumns: "1fr 1fr auto", gap: "15px", alignItems: "end"}}>
                     <div><label style={{color: "#888", fontSize: "12px"}}>Item Name *</label><input required placeholder="e.g. Cheese Burger" value={newItemName} onChange={e=>setNewItemName(e.target.value)} style={{marginBottom:0}} /></div>
@@ -463,13 +547,6 @@ function App() {
                 ))}
               </div>
             </>
-          )}
-
-          {userMode === "student" && cart.length > 0 && selectedCanteen && (
-            <div style={{position: "fixed", bottom: "30px", left: "50%", transform: "translateX(-50%)", width: "90%", maxWidth: "400px", background: "var(--primary)", color: "white", borderRadius: "50px", padding: "15px 30px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 10px 40px rgba(59, 130, 246, 0.5)", zIndex: 1000}}>
-              <span style={{fontWeight: "600"}}>{cart.length} Items • ₹{cart.reduce((a, b) => a + b.price, 0)}</span>
-              <button onClick={placeOrder} style={{background: "white", color: "var(--primary)", border: "none", padding: "8px 20px", borderRadius: "30px", fontWeight: "bold", cursor: "pointer"}}>Pay</button>
-            </div>
           )}
         </div>
       )}
