@@ -392,17 +392,17 @@ function App() {
           </form>
           <button onClick={()=>setIsRegistering(!isRegistering)} className="btn btn-secondary" style={{width: "100%", marginTop: "10px"}}>{isRegistering ? "Back to Login" : "Register"}</button>
         </div>
-        {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "⚠️" : "✅"} {toast.message}</div></div>}
+        {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "" : ""} {toast.message}</div></div>}
       </div>
     );
   }
 
   return (
     <div style={{minHeight: "100vh", paddingBottom: "100px"}}> 
-      {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "⚠️" : "✅"} {toast.message}</div></div>}
+      {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "" : ""} {toast.message}</div></div>}
       
       <div className="navbar">
-        <div className="logo" onClick={goHome} style={{cursor:"pointer"}}>CAMTEEN.</div>
+        <div className="logo" onClick={goHome} style={{cursor:"pointer"}}>CAMPUSEATS.</div>
         <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
           {userMode === "student" && userData && <div style={{color: "var(--accent)", fontWeight: "bold", border: "1px solid var(--accent)", padding: "6px 12px", borderRadius: "20px", fontSize: "14px"}}>₹{userData.walletBalance}</div>}
           <div style={{display: "flex", gap: "8px"}}>
@@ -417,7 +417,7 @@ function App() {
       {/* --- PERSISTENT ACTIVE ORDER BANNER --- */}
       {userMode === "student" && activeOrder && (
         <div className="active-order-banner" onClick={()=>setCurrentView("account")} style={{cursor:"pointer"}}>
-           <span>🔥 Order #{activeOrder.tokenId} is <strong>{activeOrder.status.toUpperCase()}</strong></span>
+           <span> Order #{activeOrder.tokenId} is <strong>{activeOrder.status.toUpperCase()}</strong></span>
            <span style={{background: "white", color: "#064e3b", padding: "4px 10px", borderRadius: "20px", fontSize: "12px"}}>Track</span>
         </div>
       )}
@@ -437,7 +437,7 @@ function App() {
                       const isShopOpen = c.isOpen !== false;
                       return (
                         <div key={c.id} className="food-card" 
-                             onClick={() => isShopOpen ? setSelectedCanteenId(c.id) : showToast("⛔ Shop is currently closed.", "error")} 
+                             onClick={() => isShopOpen ? setSelectedCanteenId(c.id) : showToast(" Shop is currently closed.", "error")} 
                              style={{cursor: isShopOpen ? "pointer" : "not-allowed", alignItems: "flex-start", textAlign: "left", backgroundImage: `linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url(${CANTEEN_IMG})`, backgroundSize: "cover", border: "1px solid #333", opacity: isShopOpen ? 1 : 0.6 }}>
                           <div style={{marginTop: "auto"}}>
                             <span style={{background: isShopOpen ? "#10b981" : "#ef4444", color: "white", padding: "5px 10px", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", marginBottom: "10px", display: "inline-block"}}>{isShopOpen ? "● OPEN" : "● CLOSED"}</span>
@@ -462,7 +462,7 @@ function App() {
 
                   <div className="main-grid">
                     <div style={{opacity: liveSelectedCanteen.isOpen === false ? 0.5 : 1, pointerEvents: liveSelectedCanteen.isOpen === false ? "none" : "auto"}}>
-                      <input type="text" placeholder="Search for food..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ marginBottom: "30px", paddingRight:"44vw", background: "#141414", borderRadius: "10px", paddingLeft: "3px", fontSize: "20px", paddingTop: "10px", paddingBottom: "10px" }} />
+                      <input type="text" placeholder="  Search for food..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ marginBottom: "30px", paddingRight:"44vw", background: "#141414", borderRadius: "10px", paddingLeft: "5px", fontSize: "20px", paddingTop: "10px", paddingBottom: "10px", border: "1px solid #333", fontFamily: "Inter, sans-serif", color: "white" }} />
                       <div className="menu-grid">
                         {liveSelectedCanteen.menu && liveSelectedCanteen.menu.filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase())).sort((a, b) => { const aTrend = topSellingItems.includes(a.name); const bTrend = topSellingItems.includes(b.name); if (aTrend && !bTrend) return -1; if (!aTrend && bTrend) return 1; return 0; }).map((item, idx) => {
                             const isAvailable = item.available !== false;
