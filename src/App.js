@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { db, auth } from './firebase'; 
 import { collection, addDoc, onSnapshot, doc, updateDoc, query, where, setDoc, getDoc, arrayUnion, arrayRemove } from 'firebase/firestore'; 
 import { signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Legend, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell, Legend } from 'recharts';
 import './index.css';
 
 function App() {
@@ -41,7 +41,7 @@ function App() {
   const [topSellingItems, setTopSellingItems] = useState([]);
   const [waitTime, setWaitTime] = useState(0); 
   
-  // NEW: Mobile Cart State
+  // Mobile Cart
   const [showMobileCart, setShowMobileCart] = useState(false);
 
   const prevOrdersRef = useRef({}); 
@@ -173,6 +173,8 @@ function App() {
     }
 
     const tokenId = Math.floor(1000 + Math.random() * 9000); 
+    // Calculate ETA
+    const estimatedTime = waitTime > 0 ? waitTime : 5; 
     const studentLabel = userData.fullName ? `${userData.fullName} (${userData.collegeId})` : user.email;
 
     try {
@@ -188,7 +190,7 @@ function App() {
         tokenId: tokenId, 
         timestamp: new Date()
       });
-      showToast(`Order Placed! Token #${tokenId}`, "success");
+      showToast(`Order Placed! Token #${tokenId}. Est. Wait: ${estimatedTime} mins`, "success");
       setCart([]); 
       setSpecialRequest("");
       setShowMobileCart(false); 
@@ -210,7 +212,6 @@ function App() {
     } catch (error) { showToast(error.message, "error"); }
   };
 
-  // --- NEW: DELETE ITEM FUNCTION ---
   const deleteItem = async (itemToDelete) => {
     if(!window.confirm(`Are you sure you want to delete ${itemToDelete.name}?`)) return;
     try {
@@ -250,7 +251,7 @@ function App() {
   const activeOrder = orders.find(o => o.status === 'pending' || o.status === 'preparing');
   const liveSelectedCanteen = canteens.find(c => c.id === selectedCanteenId);
 
-  // --- ANALYTICS ENGINE (Standard) ---
+  // --- FULL ANALYTICS ENGINE (Restored) ---
   const processStats = () => {
     const dailyData = {}; const itemCounts = {}; const canteenSpending = {}; const dailyItemBreakdown = {}; const hourlyTraffic = {}; const customerSpending = {};
     const categoryData = { "Fast Food": 0, "Meals": 0, "Drinks": 0, "Snacks": 0 };
@@ -291,6 +292,7 @@ function App() {
     return { totalSpent, chartData, topItems, canteenData, stackData, topItemNames, avgOrderValue, peakHourData, cravingsBarData, mealData, loyaltyData, avgWaitTime, rejectedCount };
   };
 
+  // --- RESTORED RICH STATS VIEW ---
   const StatsView = () => {
     const { totalSpent, chartData, topItems, canteenData, stackData, topItemNames, avgOrderValue, peakHourData, cravingsBarData, mealData, loyaltyData, avgWaitTime, rejectedCount } = processStats();
     const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#AF19FF', '#FF5733'];
@@ -298,15 +300,55 @@ function App() {
     return (
       <div className="container fade-in">
         <div className="hero"><h1>{userMode === "shopkeeper" ? "Business Intelligence" : "Consumption Analytics"}</h1></div>
+        
+        {/* METRICS ROW */}
         <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "20px", marginBottom: "40px"}}>
           <div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>TOTAL {userMode==="shopkeeper"?"REVENUE":"SPENT"}</h4><h1 style={{margin: "10px 0", color: "#10b981", fontSize: "32px"}}>₹{totalSpent}</h1></div>
           <div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>AVG ORDER VALUE</h4><h1 style={{margin: "10px 0", color: "#3b82f6", fontSize: "32px"}}>₹{avgOrderValue}</h1></div>
           {userMode === "shopkeeper" && <><div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>AVG PREP TIME</h4><h1 style={{margin: "10px 0", color: "#f59e0b", fontSize: "32px"}}>{avgWaitTime} <span style={{fontSize: "16px"}}>min</span></h1></div><div className="stat-card" style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)"}}><h4 style={{margin: 0, color: "#888"}}>REJECTIONS</h4><h1 style={{margin: "10px 0", color: "#ef4444", fontSize: "32px"}}>{rejectedCount}</h1></div></>}
         </div>
+
         <div className="main-grid" style={{gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "20px"}}>
-          <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Daily Financial Trend</h3><ResponsiveContainer width="100%" height={300}><AreaChart data={chartData}><defs><linearGradient id="colorSplit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><CartesianGrid strokeDasharray="3 3" stroke="#333" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}} /><Area type="monotone" dataKey="amount" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSplit)" /></AreaChart></ResponsiveContainer></div>
-          {userMode === "student" && <><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>What You Eat Most</h3><ResponsiveContainer width="100%" height={300}><BarChart data={cravingsBarData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis type="number" stroke="#666" /><YAxis dataKey="name" type="category" width={80} stroke="#fff" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="count" fill="#10b981" barSize={30} radius={[0, 10, 10, 0]} /></BarChart></ResponsiveContainer></div><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Spending by Canteen</h3><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={canteenData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={{ fill: 'white', fontSize: 12 }}>{canteenData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend /></PieChart></ResponsiveContainer></div></>}
-          {userMode === "shopkeeper" && <><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Peak Traffic Hours</h3><ResponsiveContainer width="100%" height={300}><BarChart data={peakHourData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="value" fill="#FF8042" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div><div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Item Sales Breakdown</h3><ResponsiveContainer width="100%" height={300}><BarChart data={stackData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend />{topItemNames.map((itemName, index) => (<Bar key={index} dataKey={itemName} stackId="a" fill={COLORS[index % COLORS.length]} />))}</BarChart></ResponsiveContainer></div></>}
+          
+          {/* COMMON: REVENUE CHART */}
+          <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}>
+             <h3 style={{color: "white", marginTop: 0}}>Daily Financial Trend</h3>
+             <ResponsiveContainer width="100%" height={300}><AreaChart data={chartData}><defs><linearGradient id="colorSplit" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient></defs><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><CartesianGrid strokeDasharray="3 3" stroke="#333" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333', borderRadius: '8px'}} /><Area type="monotone" dataKey="amount" stroke="#3b82f6" fillOpacity={1} fill="url(#colorSplit)" /></AreaChart></ResponsiveContainer>
+          </div>
+          
+          {/* STUDENT SPECIFIC */}
+          {userMode === "student" && (
+            <>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}>
+               <h3 style={{color: "white", marginTop: 0}}>What You Eat Most</h3>
+               <ResponsiveContainer width="100%" height={300}>
+                 <BarChart data={cravingsBarData} layout="vertical"><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis type="number" stroke="#666" /><YAxis dataKey="name" type="category" width={80} stroke="#fff" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="count" fill="#10b981" barSize={30} radius={[0, 10, 10, 0]} /></BarChart>
+               </ResponsiveContainer>
+             </div>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Spending by Canteen</h3><ResponsiveContainer width="100%" height={300}><PieChart><Pie data={canteenData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={5} dataKey="value" label={{ fill: 'white', fontSize: 12 }}>{canteenData.map((entry, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}</Pie><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend /></PieChart></ResponsiveContainer></div>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Meal Times</h3><ResponsiveContainer width="100%" height={300}><BarChart data={mealData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="orders" fill="#AF19FF" radius={[10, 10, 0, 0]} /></BarChart></ResponsiveContainer></div>
+            </>
+          )}
+
+          {/* SHOPKEEPER SPECIFIC */}
+          {userMode === "shopkeeper" && (
+            <>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Peak Traffic Hours</h3><ResponsiveContainer width="100%" height={300}><BarChart data={peakHourData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Bar dataKey="value" fill="#FF8042" radius={[5, 5, 0, 0]} /></BarChart></ResponsiveContainer></div>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}><h3 style={{color: "white", marginTop: 0}}>Item Sales Breakdown</h3><ResponsiveContainer width="100%" height={300}><BarChart data={stackData}><CartesianGrid strokeDasharray="3 3" stroke="#333" /><XAxis dataKey="name" stroke="#666" /><YAxis stroke="#666" /><Tooltip contentStyle={{backgroundColor: '#111', border: '1px solid #333'}} /><Legend />{topItemNames.map((itemName, index) => (<Bar key={index} dataKey={itemName} stackId="a" fill={COLORS[index % COLORS.length]} />))}</BarChart></ResponsiveContainer></div>
+             <div style={{background: "var(--bg-card)", padding: "20px", borderRadius: "12px", border: "1px solid var(--border)", minHeight: "350px"}}>
+               <h3 style={{color: "white", marginTop: 0}}>🏆 Loyal Customers</h3>
+               <div style={{display: "flex", flexDirection: "column", gap: "15px", marginTop: "20px"}}>
+                 {loyaltyData.map((cust, idx) => (
+                   <div key={idx} style={{display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.05)", padding: "15px", borderRadius: "8px", border: idx === 0 ? "1px solid #FFBB28" : "none"}}>
+                      <div style={{display: "flex", alignItems: "center", gap: "15px"}}><div style={{background: idx===0?"#FFBB28":idx===1?"#C0C0C0":"#CD7F32", width: "30px", height: "30px", borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: "bold", color: "black"}}>{idx+1}</div><span style={{fontSize: "16px", fontWeight: "bold"}}>{cust.name}</span></div>
+                      <span style={{color: "#10b981", fontWeight: "bold"}}>₹{cust.total}</span>
+                   </div>
+                 ))}
+                 {loyaltyData.length === 0 && <p style={{color: "#666"}}>No customer data yet.</p>}
+               </div>
+             </div>
+            </>
+          )}
         </div>
       </div>
     );
@@ -315,17 +357,20 @@ function App() {
   const AccountView = () => (
     <div className="container fade-in">
       <div className="hero"><h1>History</h1></div>
-      {orders.length === 0 ? <p style={{color: "#888"}}>No past orders.</p> : (
+      {orders.length === 0 ? <p style={{color: "#888", textAlign:"center"}}>No past orders.</p> : (
         <div style={{display: "grid", gap: "20px"}}>
           {orders.map(o => (
-            <div key={o.id} style={{background: "var(--bg-card)", padding: "25px", border: "1px solid var(--border)", borderRadius: "12px", position: "relative", overflow: "hidden"}}>
-              <div style={{position: "absolute", top: "-10px", right: "20px", fontSize: "80px", fontWeight: "900", color: "rgba(255,255,255,0.05)", pointerEvents: "none"}}>#{o.tokenId}</div>
-              <div style={{display: "flex", justifyContent: "space-between", marginBottom: "15px", position: "relative"}}>
-                <div><strong style={{color: "white", display:"block", fontSize: "18px"}}>Token #{o.tokenId}</strong><span style={{color: "#888", fontSize: "14px"}}>{o.canteenName} • {o.timestamp?.toDate().toLocaleDateString()}</span></div>
-                <span className={`status-badge status-${o.status}`}>{o.status}</span>
+            <div key={o.id} className="history-card">
+              {/* WATERMARK IS CENTERED VIA CSS */}
+              <div className="token-watermark">#{o.tokenId}</div>
+              <div className="history-content">
+                <div style={{display: "flex", justifyContent: "space-between", marginBottom: "15px"}}>
+                  <div><strong style={{color: "white", fontSize: "18px"}}>Token #{o.tokenId}</strong><span style={{color: "#ccc", fontSize: "14px", display:"block"}}>{o.canteenName} • {o.timestamp?.toDate().toLocaleDateString()}</span></div>
+                  <span className={`status-badge status-${o.status}`}>{o.status}</span>
+                </div>
+                <ul style={{margin: "0 0 15px 0", paddingLeft: "20px", color: "#aaa"}}>{o.items.map((i,x) => <li key={x}>{i.name}</li>)}</ul>
+                <div style={{fontWeight: "800", textAlign: "right", fontSize: "18px", color: "var(--accent)"}}>₹{o.total}</div>
               </div>
-              <ul style={{margin: "0 0 15px 0", paddingLeft: "20px", color: "#aaa", position: "relative"}}>{o.items.map((i,x) => <li key={x}>{i.name}</li>)}</ul>
-              <div style={{fontWeight: "800", textAlign: "right", fontSize: "18px", color: "white", position: "relative"}}>₹{o.total}</div>
             </div>
           ))}
         </div>
@@ -335,9 +380,9 @@ function App() {
 
   if (!user) {
     return (
-      <div style={{minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-body)"}}>
+      <div style={{minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", background: "var(--bg-body)", padding: 20}}>
         <div style={{background: "var(--bg-card)", padding: "40px", width: "100%", maxWidth: "350px", border: "1px solid var(--border)", borderRadius: "16px"}}>
-          <h2 style={{marginTop: 0, marginBottom: "20px", color: "white"}}>{isRegistering ? "Create Account" : "Sign In"}</h2>
+          <h2 style={{marginTop: 0, marginBottom: "20px", color: "white", textAlign:"center"}}>{isRegistering ? "Create Account" : "Sign In"}</h2>
           <form onSubmit={isRegistering ? handleSignup : handleLogin}>
             {isRegistering && <><input type="text" placeholder="Full Name" onChange={e=>setFullName(e.target.value)} required /><input type="text" placeholder="College ID" onChange={e=>setCollegeId(e.target.value)} required /></>}
             <input type="email" placeholder="Email" onChange={e=>setEmail(e.target.value)} required />
@@ -345,7 +390,7 @@ function App() {
             {isRegistering && <input type="password" placeholder="Confirm Password" onChange={e=>setConfirmPass(e.target.value)} required />}
             <button type="submit" className="btn btn-primary" style={{width: "100%", marginTop: "10px"}}>{isRegistering ? "Join (Get ₹5000)" : "Enter"}</button>
           </form>
-          <button onClick={()=>setIsRegistering(!isRegistering)} className="btn btn-secondary" style={{width: "100%", marginTop: "10px"}}>{isRegistering ? "Back to Login" : "No account? Register"}</button>
+          <button onClick={()=>setIsRegistering(!isRegistering)} className="btn btn-secondary" style={{width: "100%", marginTop: "10px"}}>{isRegistering ? "Back to Login" : "Register"}</button>
         </div>
         {toast.show && <div className="toast-container"><div className={`toast toast-${toast.type}`}>{toast.type === "error" ? "⚠️" : "✅"} {toast.message}</div></div>}
       </div>
@@ -358,9 +403,9 @@ function App() {
       
       <div className="navbar">
         <div className="logo" onClick={goHome} style={{cursor:"pointer"}}>CAMTEEN.</div>
-        <div style={{display: "flex", alignItems: "center", gap: "15px"}}>
-          {userMode === "student" && userData && <div style={{color: "#10b981", fontWeight: "bold", border: "1px solid #10b981", padding: "8px 15px", borderRadius: "20px", fontSize: "14px"}}>₹{userData.walletBalance}</div>}
-          <div style={{display: "flex", gap: "10px"}}>
+        <div style={{display: "flex", alignItems: "center", gap: "10px"}}>
+          {userMode === "student" && userData && <div style={{color: "var(--accent)", fontWeight: "bold", border: "1px solid var(--accent)", padding: "6px 12px", borderRadius: "20px", fontSize: "14px"}}>₹{userData.walletBalance}</div>}
+          <div style={{display: "flex", gap: "8px"}}>
             <button onClick={goHome} className={`btn ${currentView==="home"?"btn-primary":"btn-secondary"}`}>Menu</button>
             {userMode === "student" && <button onClick={()=>setCurrentView("account")} className={`btn ${currentView==="account"?"btn-primary":"btn-secondary"}`}>History</button>}
             <button onClick={()=>setCurrentView("stats")} className={`btn ${currentView==="stats"?"btn-primary":"btn-secondary"}`}>Stats</button>
@@ -369,11 +414,11 @@ function App() {
         </div>
       </div>
 
-      {/* --- PERSISTENT ACTIVE ORDER BANNER (Sticky Top) --- */}
+      {/* --- PERSISTENT ACTIVE ORDER BANNER --- */}
       {userMode === "student" && activeOrder && (
         <div className="active-order-banner" onClick={()=>setCurrentView("account")} style={{cursor:"pointer"}}>
            <span>🔥 Order #{activeOrder.tokenId} is <strong>{activeOrder.status.toUpperCase()}</strong></span>
-           <span style={{background: "white", color: "#064e3b", padding: "4px 10px", borderRadius: "20px", fontSize: "12px"}}>Track →</span>
+           <span style={{background: "white", color: "#064e3b", padding: "4px 10px", borderRadius: "20px", fontSize: "12px"}}>Track</span>
         </div>
       )}
 
@@ -451,42 +496,20 @@ function App() {
             </>
           )}
 
-          {/* --- NEW: MOBILE CART MODAL (Popup List) --- */}
-          {userMode === "student" && showMobileCart && (
-            <div className="mobile-cart-overlay" onClick={() => setShowMobileCart(false)}>
-               <div className="mobile-cart-content" onClick={e => e.stopPropagation()}>
-                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px"}}>
-                     <h2 style={{margin: 0, color: "white"}}>Your Cart</h2>
-                     <button onClick={() => setShowMobileCart(false)} style={{background: "none", border: "none", color: "#888", fontSize: "24px"}}>×</button>
-                  </div>
-                  {cart.length === 0 ? <p style={{color: "#555"}}>Empty</p> : (
-                    <>
-                      <ul style={{paddingLeft: "20px", color: "#ccc", marginBottom: "30px"}}>
-                        {cart.map((i, idx) => (
-                          <li key={idx} style={{marginBottom: "10px", display: "flex", justifyContent: "space-between"}}>
-                             <span>{i.name}</span>
-                             <span>₹{i.price}</span>
-                          </li>
-                        ))}
-                      </ul>
-                      <div style={{display: "flex", justifyContent: "space-between", color: "white", fontSize: "20px", fontWeight: "bold", marginBottom: "20px"}}>
-                         <span>Total</span>
-                         <span style={{color: "var(--accent)"}}>₹{cart.reduce((a,b)=>a+b.price,0)}</span>
-                      </div>
-                      <textarea placeholder="Special instructions..." value={specialRequest} onChange={(e) => setSpecialRequest(e.target.value)} style={{width: "100%", padding: "12px", background: "#333", border: "none", color: "white", borderRadius: "8px", marginBottom: "20px"}} rows={2} />
-                      <button onClick={placeOrder} className="btn btn-primary" style={{width: "100%", padding: "15px", fontSize: "18px"}}>Pay Now</button>
-                    </>
-                  )}
+          {/* MOBILE CART MODAL */}
+          {userMode==="student" && showMobileCart && (
+            <div className="mobile-cart-overlay" onClick={()=>setShowMobileCart(false)}>
+               <div className="mobile-cart-content" onClick={e=>e.stopPropagation()}>
+                  <div style={{display:"flex", justifyContent:"space-between", marginBottom:20}}><h2>Cart</h2><button onClick={()=>setShowMobileCart(false)} style={{background:"none", border:"none", color:"white", fontSize:24}}>×</button></div>
+                  {cart.length===0?<p>Empty</p>:cart.map((i,x)=><div key={x} style={{display:"flex", justifyContent:"space-between", marginBottom:10}}><span>{i.name}</span><span>₹{i.price}</span></div>)}
+                  {cart.length>0 && <><div style={{display:"flex", justifyContent:"space-between", margin:"20px 0", fontSize:18, fontWeight:"bold"}}><span>Total</span><span>₹{cart.reduce((a,b)=>a+b.price,0)}</span></div><textarea placeholder="Special notes..." value={specialRequest} onChange={(e) => setSpecialRequest(e.target.value)} style={{width: "100%", padding: "10px", borderRadius: "6px", background: "#333", border: "none", color: "white", marginBottom: "15px"}} rows={2} /><button onClick={placeOrder} className="btn btn-primary" style={{width:"100%", marginTop:10}}>Pay Now</button></>}
                </div>
             </div>
           )}
-
-          {/* --- NEW: MOBILE CART BAR (Trigger) --- */}
-          {userMode === "student" && cart.length > 0 && selectedCanteenId && !showMobileCart && (
-            <div onClick={() => setShowMobileCart(true)} style={{position: "fixed", bottom: "30px", left: "50%", transform: "translateX(-50%)", width: "90%", maxWidth: "400px", background: "var(--primary)", color: "white", borderRadius: "50px", padding: "15px 30px", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: "0 10px 40px rgba(59, 130, 246, 0.5)", zIndex: 1000, cursor: "pointer"}}>
-              <span style={{fontWeight: "600"}}>{cart.length} Items • ₹{cart.reduce((a, b) => a + b.price, 0)}</span>
-              <span style={{fontWeight: "bold", background: "white", color: "var(--primary)", padding: "5px 15px", borderRadius: "20px"}}>View Cart</span>
-            </div>
+          {userMode==="student" && cart.length>0 && !showMobileCart && selectedCanteenId && (
+             <div onClick={()=>setShowMobileCart(true)} style={{position:"fixed", bottom:30, left:"50%", transform:"translateX(-50%)", background:"var(--primary)", color:"white", padding:"12px 25px", borderRadius:30, boxShadow:"0 10px 20px rgba(0,0,0,0.5)", fontWeight:"bold", zIndex:1000, cursor:"pointer", display:"flex", gap:15}}>
+                <span>{cart.length} Items</span><span>₹{cart.reduce((a,b)=>a+b.price,0)}</span><span>View Cart ↑</span>
+             </div>
           )}
 
           {userMode === "shopkeeper" && (
@@ -528,8 +551,7 @@ function App() {
                 </div>
               )}
 
-              <h2 style={{color: "white", marginBottom: "20px"}}>Incoming Orders</h2>
-              <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "30px"}}>
+              <div style={{display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: "80px"}}>
                 {orders.length === 0 && <p style={{color: "#666"}}>No active orders right now.</p>}
                 {orders.map(o => (
                   <div key={o.id} style={{background: "var(--bg-card)", padding: "25px", border: "1px solid var(--border)", borderRadius: "12px", position: "relative", display: "flex", flexDirection: "column", height: "100%", boxShadow: "0 10px 30px rgba(0,0,0,0.3)"}}>
